@@ -1,0 +1,6 @@
+name = "goatalk-transcriber"
+main = "transcriber-worker.ts"
+compatibility_date = "2024-12-01"
+
+[ai]
+binding = "AI"

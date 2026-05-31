@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { getTranscriptionMode } from '../lib/database'
 
 interface SpeechRecognitionErrorEvent extends Event {
   error: string
@@ -12,20 +13,32 @@ export function useTranscription() {
   const [interimText, setInterimText] = useState('')
   const [modelReady, setModelReady] = useState(false)
   const [modelError, setModelError] = useState<string | null>(null)
-  const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const recognitionRef = useRef<any>(null)
   const transcriptRef = useRef('')
   const shouldRestartRef = useRef(false)
+  const endResolveRef = useRef<(() => void) | null>(null)
 
   const SpeechRecognitionAPI = typeof window !== 'undefined'
     ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
     : null
 
   useEffect(() => {
-    if (SpeechRecognitionAPI) {
-      setModelReady(true)
-    } else {
-      setModelError('Speech recognition not available — type transcript manually')
+    const checkMode = async () => {
+      const mode = await getTranscriptionMode()
+      if (mode === 'whisper' || mode === 'hf' || mode === 'deepgram' || mode === 'groq') {
+        setModelReady(true)
+        setModelError(null)
+      } else if (SpeechRecognitionAPI) {
+        setModelReady(true)
+        setModelError(null)
+      } else {
+        const isFirefox = navigator.userAgent.includes('Firefox')
+        setModelError(isFirefox
+          ? 'Speech recognition is not supported in Firefox. Use HuggingFace or Deepgram in Settings for free AI transcription.'
+          : 'Speech recognition not available in this browser. Use HuggingFace or Deepgram in Settings for free AI transcription.')
+      }
     }
+    checkMode()
   }, [SpeechRecognitionAPI])
 
   const getLang = () => {
@@ -88,6 +101,8 @@ export function useTranscription() {
           } else {
             setIsTranscribing(false)
             setInterimText('')
+            endResolveRef.current?.()
+            endResolveRef.current = null
           }
         }
 
@@ -102,21 +117,31 @@ export function useTranscription() {
     startRecognition()
   }, [SpeechRecognitionAPI, i18n.language])
 
-  const stopListening = useCallback((): string => {
+  const stopListening = useCallback((): Promise<string> => {
     shouldRestartRef.current = false
-    setIsTranscribing(false)
     setInterimText('')
-    if (recognitionRef.current) {
+
+    if (!recognitionRef.current) {
+      setIsTranscribing(false)
+      return Promise.resolve(transcriptRef.current.trim().replace(/\s+/g, ' '))
+    }
+
+    return new Promise((resolve) => {
+      endResolveRef.current = () => {
+        resolve(transcriptRef.current.trim().replace(/\s+/g, ' '))
+      }
       try {
         if (recognitionRef.current.state !== 'inactive') {
           recognitionRef.current.stop()
+        } else {
+          endResolveRef.current()
         }
       } catch (err) {
         console.error('Error stopping recognition:', err)
+        endResolveRef.current()
       }
       recognitionRef.current = null
-    }
-    return transcriptRef.current.trim().replace(/\s+/g, ' ')
+    })
   }, [])
 
   useEffect(() => {

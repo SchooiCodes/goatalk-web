@@ -21,7 +21,6 @@ export default function RecordingButton({ onRecordingComplete, onError, onCancel
   const [showWarning, setShowWarning] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const startTimeRef = useRef(0)
-  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const clearTimer = () => { clearInterval(timerRef.current); timerRef.current = undefined }
 
@@ -124,11 +123,11 @@ export default function RecordingButton({ onRecordingComplete, onError, onCancel
         </div>
       )}
 
-      <div className="relative">
+      <div className="relative pb-8">
         <div className={`absolute inset-0 rounded-full ${isActive ? 'animate-pulse-glow' : ''}`} />
 
         {isActive && state === 'recording' && (
-          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 flex gap-1.5 items-end h-3">
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 flex gap-2 items-end h-4">
             {Array.from({ length: WAVE_BARS }).map((_, i) => (
               <div
                 key={i}

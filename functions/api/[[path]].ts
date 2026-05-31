@@ -1,5 +1,6 @@
 interface Env {
   GOATALK_KV: KVNamespace
+  CLOUDFLARE_API_TOKEN?: string
 }
 
 function json(body: unknown, status = 200) {
@@ -173,6 +174,51 @@ async function handleDeleteNote(env: Env, request: Request, id: string) {
   return json({ success: true })
 }
 
+async function handleListLongs(env: Env, request: Request) {
+  const hash = getPairingHash(request)
+  if (!hash) return json({ error: 'Missing pairing hash' }, 400)
+  const prefix = `shared/${hash}/longs/`
+  const result = await env.GOATALK_KV.list({ prefix })
+  const entries = result.keys.map((k) => ({
+    id: k.name.replace(prefix, '').replace('.enc', ''),
+  }))
+  return json(entries)
+}
+
+async function handleUploadLong(request: Request, env: Env) {
+  const hash = getPairingHash(request)
+  if (!hash) return json({ error: 'Missing pairing hash' }, 400)
+  const url = new URL(request.url)
+  const id = url.searchParams.get('id')
+  if (!id) return json({ error: 'Missing long id' }, 400)
+
+  const bytes = await request.arrayBuffer()
+  if (bytes.byteLength > 1024 * 1024) {
+    return json({ error: 'Long too large' }, 413)
+  }
+
+  const key = `shared/${hash}/longs/${id}.enc`
+  await env.GOATALK_KV.put(key, bytes)
+  return json({ success: true }, 201)
+}
+
+async function handleGetLong(env: Env, request: Request, id: string) {
+  const hash = getPairingHash(request)
+  if (!hash) return json({ error: 'Missing pairing hash' }, 400)
+  const key = `shared/${hash}/longs/${id}.enc`
+  const value = await env.GOATALK_KV.get(key, { type: 'arrayBuffer' })
+  if (!value) return json({ error: 'Not found' }, 404)
+  return new Response(value, { headers: { 'Content-Type': 'application/octet-stream' } })
+}
+
+async function handleDeleteLong(env: Env, request: Request, id: string) {
+  const hash = getPairingHash(request)
+  if (!hash) return json({ error: 'Missing pairing hash' }, 400)
+  const key = `shared/${hash}/longs/${id}.enc`
+  await env.GOATALK_KV.delete(key)
+  return json({ success: true })
+}
+
 interface DeviceInfo {
   id: string
   name: string
@@ -312,6 +358,20 @@ export async function onRequest(context: EventContext<Env, string, any>) {
       return json({ error: 'Method not allowed' }, 405)
     }
 
+    if (path === 'longs') {
+      if (request.method === 'GET') return handleListLongs(env, request)
+      if (request.method === 'POST') return handleUploadLong(request, env)
+      return json({ error: 'Method not allowed' }, 405)
+    }
+
+    if (path.startsWith('longs/')) {
+      const id = path.replace('longs/', '')
+      if (!id) return json({ error: 'Not found' }, 404)
+      if (request.method === 'GET') return handleGetLong(env, request, id)
+      if (request.method === 'DELETE') return handleDeleteLong(env, request, id)
+      return json({ error: 'Method not allowed' }, 405)
+    }
+
     if (path === 'migrate') {
       if (request.method === 'POST') return handleExportSession(request, env)
       if (request.method === 'GET') return handleImportSession(env, request)
@@ -335,12 +395,199 @@ export async function onRequest(context: EventContext<Env, string, any>) {
       })
     }
 
-    // Whisper transcription (optional - for future use with API key)
+    // Config: returns client-safe settings
+    if (path === 'config') {
+      return json({
+        huggingFaceToken: !!env.HUGGINGFACE_TOKEN,
+        deepgramConfigured: !!env.DEEPGRAM_API_KEY,
+      })
+    }
+
+    // Usage: check remaining credits for server-configured providers
+    if (path === 'usage') {
+      const result: Record<string, { status: string; detail?: string }> = {}
+
+      // Check Deepgram
+      if (env.DEEPGRAM_API_KEY) {
+        try {
+          const projects = await fetch('https://api.deepgram.com/v1/projects', {
+            headers: { Authorization: `Token ${env.DEEPGRAM_API_KEY}` },
+          })
+          if (projects.ok) {
+            result.deepgram = { status: 'ok', detail: 'Ready' }
+          } else {
+            result.deepgram = { status: 'error', detail: 'Invalid key' }
+          }
+        } catch {
+          result.deepgram = { status: 'error', detail: 'Check failed' }
+        }
+      }
+
+      // Check HuggingFace
+      if (env.HUGGINGFACE_TOKEN) {
+        try {
+          // Try a lightweight inference probe to check credits
+          const probe = await fetch(
+            'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo',
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${env.HUGGINGFACE_TOKEN}`,
+                'Content-Type': 'audio/wav',
+              },
+              body: new Uint8Array(44), // minimal valid WAV header
+            },
+          )
+          if (probe.ok || probe.status === 500) {
+            // 500 means the model processed it but found the audio too short — still means credits are fine
+            result.huggingFace = { status: 'ok', detail: 'Credits available' }
+          } else if (probe.status === 402 || probe.status === 403) {
+            result.huggingFace = { status: 'depleted', detail: 'Credits depleted' }
+          } else {
+            result.huggingFace = { status: 'ok', detail: 'Ready' }
+          }
+        } catch {
+          result.huggingFace = { status: 'error', detail: 'Check failed' }
+        }
+      }
+
+      return json(result)
+    }
+
+    // Whisper transcription relay (optional — client can also call OpenAI directly)
     if (path === 'transcribe') {
       if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-      // This endpoint is for future use if we want to add Whisper transcription
-      // Currently using Web Speech API for instant transcription
-      return json({ error: 'Whisper transcription not yet configured' }, 501)
+      const token = env.OPENAI_API_KEY
+      if (!token) return json({ error: 'Transcription not configured' }, 500)
+
+      try {
+        // Relay the raw audio blob to OpenAI's Whisper API
+        const contentType = request.headers.get('content-type') || 'audio/wav'
+        const body = await request.arrayBuffer()
+        const formData = new Uint8Array(body)
+
+        // Build multipart for OpenAI
+        const boundary = '----Boundary' + Math.random().toString(36).slice(2)
+        const encoder = new TextEncoder()
+        const disp = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: ${contentType}\r\n\r\n`
+        const modelPart = `\r\n--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n--${boundary}--\r\n`
+        const header = encoder.encode(disp)
+        const footer = encoder.encode(modelPart)
+
+        const full = new Uint8Array(header.byteLength + body.byteLength + footer.byteLength)
+        full.set(header, 0)
+        full.set(new Uint8Array(body), header.byteLength)
+        full.set(footer, header.byteLength + body.byteLength)
+
+        const aiRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          },
+          body: full,
+        })
+
+        if (!aiRes.ok) {
+          const errText = await aiRes.text()
+          return json({ error: errText }, 502)
+        }
+
+        const aiData = await aiRes.json() as any
+        return json({ text: (aiData.text || '').trim() })
+      } catch (e: any) {
+        return json({ error: e?.message || 'Transcription failed' }, 500)
+      }
+    }
+
+    // HuggingFace Whisper relay (client can't call api-inference.huggingface.co directly due to CORS)
+    if (path === 'transcribe-hf') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+      const token = env.HUGGINGFACE_TOKEN
+      if (!token) return json({ error: 'HuggingFace not configured' }, 500)
+
+      try {
+        const blob = await request.arrayBuffer()
+        if (blob.byteLength === 0) return json({ error: 'Empty audio' }, 400)
+
+        const resp = await fetch(
+          'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': request.headers.get('content-type') || 'audio/webm',
+            },
+            body: blob,
+          },
+        )
+
+        if (!resp.ok) {
+          // HF may return 503 if model is loading; retry once after a short delay
+          if (resp.status === 503) {
+            await new Promise((r) => setTimeout(r, 5000))
+            const retry = await fetch(
+              'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo',
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  'Content-Type': request.headers.get('content-type') || 'audio/webm',
+                },
+                body: blob,
+              },
+            )
+            if (!retry.ok) {
+              const errText = await retry.text()
+              return json({ error: errText || `HuggingFace failed (${retry.status})` }, 502)
+            }
+            const data = await retry.json() as any
+            return json({ text: (data.text || '').trim() })
+          }
+          const errText = await resp.text()
+          return json({ error: errText || `HuggingFace failed (${resp.status})` }, 502)
+        }
+
+        const data = await resp.json() as any
+        return json({ text: (data.text || '').trim() })
+      } catch (e: any) {
+        return json({ error: e?.message || 'HuggingFace transcription relay failed' }, 500)
+      }
+    }
+
+    // Deepgram relay
+    if (path === 'transcribe-deepgram') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+      const token = env.DEEPGRAM_API_KEY
+      if (!token) return json({ error: 'Deepgram not configured' }, 500)
+
+      try {
+        const blob = await request.arrayBuffer()
+        if (blob.byteLength === 0) return json({ error: 'Empty audio' }, 400)
+
+        const resp = await fetch(
+          'https://api.deepgram.com/v1/listen?language=en&model=whisper&smart_format=true',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Token ${token}`,
+              'Content-Type': request.headers.get('content-type') || 'audio/webm',
+            },
+            body: blob,
+          },
+        )
+
+        if (!resp.ok) {
+          const errText = await resp.text()
+          return json({ error: errText || `Deepgram failed (${resp.status})` }, 502)
+        }
+
+        const data = await resp.json() as any
+        const transcript = data?.results?.channels?.[0]?.alternatives?.[0]?.transcript || ''
+        return json({ text: transcript.trim() })
+      } catch (e: any) {
+        return json({ error: e?.message || 'Deepgram transcription relay failed' }, 500)
+      }
     }
 
     return json({ error: 'Not found' }, 404)

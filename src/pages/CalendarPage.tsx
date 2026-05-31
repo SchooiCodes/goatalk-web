@@ -42,7 +42,7 @@ export default function CalendarPage() {
   const selectedRants = rantsByDate[format(selectedDate, 'yyyy-MM-dd')] ?? []
 
   return (
-    <div className="px-4 pt-4 max-w-lg mx-auto animate-fade-in">
+    <div className="px-4 md:px-6 pt-4 animate-fade-in">
       <h1 className="text-3xl font-extrabold text-[var(--text-primary)] mb-4">{t('calendar.title')}</h1>
 
       {/* Month nav */}

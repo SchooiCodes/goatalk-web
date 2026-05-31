@@ -4,6 +4,7 @@ import { ThemeProvider } from './store/ThemeContext'
 import { AuthProvider, useAuth } from './store/AuthContext'
 import { RantProvider } from './store/RantContext'
 import { NoteProvider } from './store/NoteContext'
+import { LongProvider } from './store/LongContext'
 import Layout from './components/Layout'
 import ToastContainer from './components/Toast'
 import AppLockManager from './components/AppLockManager'
@@ -17,6 +18,7 @@ const CalendarPage = lazy(() => import('./pages/CalendarPage'))
 const StatsPage = lazy(() => import('./pages/StatsPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const BadgesPage = lazy(() => import('./pages/BadgesPage'))
+const LongsPage = lazy(() => import('./pages/LongsPage'))
 
 function Spinner() {
   return <div className="flex items-center justify-center min-h-dvh bg-[var(--bg)]"><span className="w-6 h-6 border-2 border-[var(--pink)] border-t-transparent rounded-full animate-spin" /></div>
@@ -38,8 +40,9 @@ function AppRoutes() {
         <Route path="/pair" element={isPaired ? <Navigate to="/feed" replace /> : <PairPage />} />
         <Route path="/feed" element={<ProtectedRoute><Layout><FeedPage /></Layout></ProtectedRoute>} />
         <Route path="/record" element={<ProtectedRoute><Layout><RecordPage /></Layout></ProtectedRoute>} />
-        <Route path="/rant/:id" element={<ProtectedRoute><RantDetailPage /></ProtectedRoute>} />
+        <Route path="/rant/:id" element={<ProtectedRoute><Layout><RantDetailPage /></Layout></ProtectedRoute>} />
         <Route path="/board" element={<ProtectedRoute><Layout><BoardPage /></Layout></ProtectedRoute>} />
+        <Route path="/longs" element={<ProtectedRoute><Layout><LongsPage /></Layout></ProtectedRoute>} />
         <Route path="/calendar" element={<ProtectedRoute><Layout><CalendarPage /></Layout></ProtectedRoute>} />
         <Route path="/stats" element={<ProtectedRoute><Layout><StatsPage /></Layout></ProtectedRoute>} />
         <Route path="/badges" element={<ProtectedRoute><Layout><BadgesPage /></Layout></ProtectedRoute>} />
@@ -58,7 +61,9 @@ export default function App() {
           <AppLockManager>
             <RantProvider>
               <NoteProvider>
-                <AppRoutes />
+                <LongProvider>
+                  <AppRoutes />
+                </LongProvider>
               </NoteProvider>
             </RantProvider>
             <ToastContainer />

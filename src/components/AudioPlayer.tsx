@@ -25,7 +25,6 @@ export default function AudioPlayer({ audioKey, onListenProgress, onComplete }: 
   const [error, setError] = useState(false)
   const [volume, setVolume] = useState(1)
 
-  const audVol = Math.min(1, volume)
   const [showVolume, setShowVolume] = useState(false)
   const [seekTooltip, setSeekTooltip] = useState<{ text: string; left: number } | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -50,7 +49,10 @@ export default function AudioPlayer({ audioKey, onListenProgress, onComplete }: 
     return () => { cancelled = true }
   }, [audioKey])
 
-  useEffect(loadAudioUrl, [loadAudioUrl])
+  useEffect(() => {
+    const cleanup = loadAudioUrl()
+    return cleanup
+  }, [loadAudioUrl])
 
   useEffect(() => {
     if (!audioUrl) return
@@ -92,7 +94,7 @@ export default function AudioPlayer({ audioKey, onListenProgress, onComplete }: 
       audio.removeEventListener('error', onError)
       audioRef.current = null
     }
-  }, [audioUrl, speed])
+  }, [audioUrl])
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.playbackRate = speed

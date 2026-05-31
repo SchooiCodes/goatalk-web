@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../store/AuthContext'
 import KawaiiButton from '../components/KawaiiButton'
 import Icon from '../components/Icon'
-import { resetAllData } from '../lib/database'
 
 export default function PairPage() {
   const { t } = useTranslation()
@@ -81,11 +80,6 @@ export default function PairPage() {
     }
   }
 
-  const handleReset = async () => {
-    await resetAllData()
-    window.location.reload()
-  }
-
   return (
     <div className="min-h-dvh flex flex-col justify-center px-6 bg-[var(--bg)] bg-gradient-to-b from-[var(--bg)] via-[var(--cream)] to-[var(--bg)]">
       {/* Floating decorations */}
@@ -105,15 +99,20 @@ export default function PairPage() {
             type="text"
             placeholder={t('pair.displayNamePlaceholder')}
             value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
+            onChange={(e) => {
+              let val = e.target.value
+              // trim leading whitespace
+              if (val !== val.trimStart()) val = val.trimStart()
+              setDisplayName(val.slice(0, 30))
+            }}
             className="w-full bg-[var(--card-glass)] backdrop-blur-sm border-2 border-[var(--border)] rounded-2xl px-5 py-4 text-base text-[var(--text-primary)] outline-none focus:border-[var(--pink)] focus:shadow-lg transition-all placeholder:text-[var(--text-muted)]"
             autoFocus
             autoComplete="name"
           />
 
-          {mode === 'choose' && displayName.trim() && (
+          {mode === 'choose' && (
             <div className="flex flex-col gap-3 animate-fade-in-up">
-              <KawaiiButton onClick={handleGenerate} size="lg">
+              <KawaiiButton onClick={handleGenerate} size="lg" disabled={!displayName.trim()}>
                 <Icon emoji="✨" size={18} /> {t('pair.createRoom')}
               </KawaiiButton>
               <KawaiiButton onClick={() => setMode('join')} variant="outline" size="md">
@@ -158,6 +157,7 @@ export default function PairPage() {
                 placeholder={t('pair.placeholder')}
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleConnect() }}
                 maxLength={6}
                 className="w-full bg-[var(--card-glass)] backdrop-blur-sm border-2 border-[var(--border)] rounded-2xl px-5 py-4 text-2xl text-center tracking-[0.3em] font-extrabold text-[var(--text-primary)] outline-none focus:border-[var(--pink)] focus:shadow-lg transition-all placeholder:text-[var(--text-muted)] placeholder:tracking-normal placeholder:font-normal"
                 autoCapitalize="characters"
@@ -193,6 +193,7 @@ export default function PairPage() {
                 placeholder={t('migrate.placeholder')}
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleMigrate() }}
                 maxLength={6}
                 className="w-full bg-[var(--card-glass)] backdrop-blur-sm border-2 border-[var(--border)] rounded-2xl px-5 py-4 text-2xl text-center tracking-[0.3em] font-extrabold text-[var(--text-primary)] outline-none focus:border-[var(--pink)] focus:shadow-lg transition-all placeholder:text-[var(--text-muted)] placeholder:tracking-normal placeholder:font-normal"
                 autoCapitalize="characters"
@@ -219,15 +220,11 @@ export default function PairPage() {
               </button>
             </div>
           )}
-        </div>
 
-        <button
-          onClick={handleReset}
-          className="text-xs text-[var(--text-muted)] underline text-center mt-8 hover:text-[var(--pink)] transition-colors"
-          type="button"
-        >
-          <Icon emoji="🔄" size={12} /> {t('common.reset')}
-        </button>
+          {mode !== 'choose' && (
+            <div className="mt-4" />
+          )}
+        </div>
       </div>
     </div>
   )
