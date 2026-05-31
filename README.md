@@ -1,73 +1,52 @@
-# React + TypeScript + Vite
+# GoaTalk — Voice notes for two
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Encrypted voice ranting app for pairs. Record audio rants, get AI transcriptions, react with emojis, and stay in sync — all end-to-end encrypted.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Voice rants** — Record and send audio messages with automatic transcription
+- **End-to-end encryption** — AES-256-GCM + PBKDF2; server never sees plaintext
+- **Multi-provider transcription** — Browser Web Speech, HuggingFace, Deepgram, OpenAI, Groq
+- **Board & long notes** — Pinboard-style notes and long-form encrypted entries
+- **Privacy overlays** — Blur sensitive content, reveal on tap
+- **Reactions & tags** — Emoji reactions, color-coded tags on rants
+- **Desktop & mobile** — Sidebar layout on desktop, bottom nav on mobile
+- **Offline support** — IndexedDB-backed, syncs when online
+- **Pairing** — Share a pairing code to connect two devices securely
 
-## React Compiler
+## Tech stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+[React](https://react.dev) · [TypeScript](https://www.typescriptlang.org) · [Vite](https://vitejs.dev) · [Tailwind CSS v4](https://tailwindcss.com) · [Cloudflare Pages](https://pages.cloudflare.com) · [IndexedDB (idb)](https://github.com/jakearchibald/idb) · [i18next](https://www.i18next.com)
 
-## Expanding the ESLint configuration
+## Development
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Building
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run build
+npm run preview
 ```
+
+## Deployment
+
+The app is designed to run on Cloudflare Pages with a Functions backend and KV storage.
+
+```bash
+npm run deploy
+```
+
+Required secrets (set via `wrangler secret put`):
+
+| Secret | Description |
+|---|---|
+| `HUGGINGFACE_TOKEN` | HuggingFace API token for free transcription |
+| `DEEPGRAM_API_KEY` | Deepgram API key (free tier has $200 credit) |
+
+## License
+
+MIT
