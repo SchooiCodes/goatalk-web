@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef } from 'react'
 
 const STORAGE_KEY = 'goatalk_privacy_mode'
 
@@ -11,38 +11,50 @@ export function setPrivacyMode(enabled: boolean) {
 }
 
 export default function PrivacyOverlay() {
-  const [showOverlay, setShowOverlay] = useState(false)
+  const overlayRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!getPrivacyMode()) {
-      setShowOverlay(false)
-      return
+    const show = () => {
+      if (overlayRef.current) overlayRef.current.style.display = 'flex'
+    }
+    const hide = () => {
+      if (overlayRef.current) overlayRef.current.style.display = 'none'
     }
 
+    const handleBlur = () => {
+      if (getPrivacyMode()) show()
+    }
+    const handleFocus = () => {
+      if (getPrivacyMode()) hide()
+    }
     const handleVisibility = () => {
-      setShowOverlay(document.hidden)
+      if (!getPrivacyMode()) return
+      if (document.hidden) show()
+      else hide()
     }
 
-    const handlePageHide = () => setShowOverlay(true)
-    const handlePageShow = () => setShowOverlay(false)
-
+    window.addEventListener('blur', handleBlur)
+    window.addEventListener('focus', handleFocus)
     document.addEventListener('visibilitychange', handleVisibility)
-    window.addEventListener('pagehide', handlePageHide)
-    window.addEventListener('pageshow', handlePageShow)
+    window.addEventListener('pagehide', show)
+    window.addEventListener('pageshow', hide)
+
+    if (!getPrivacyMode()) hide()
 
     return () => {
+      window.removeEventListener('blur', handleBlur)
+      window.removeEventListener('focus', handleFocus)
       document.removeEventListener('visibilitychange', handleVisibility)
-      window.removeEventListener('pagehide', handlePageHide)
-      window.removeEventListener('pageshow', handlePageShow)
+      window.removeEventListener('pagehide', show)
+      window.removeEventListener('pageshow', hide)
     }
   }, [])
 
-  if (!showOverlay) return null
-
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-[9999] bg-[var(--bg)] flex items-center justify-center"
-      style={{ backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)' }}
+      style={{ display: 'none' }}
     >
       <div className="flex flex-col items-center gap-4 animate-fade-in">
         <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[var(--pink)] to-[var(--pink-dark)] flex items-center justify-center shadow-lg">

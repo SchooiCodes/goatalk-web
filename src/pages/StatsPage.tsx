@@ -64,7 +64,7 @@ export default function StatsPage() {
   ]
 
   return (
-    <div className="px-4 pt-4 max-w-lg mx-auto pb-8 animate-fade-in">
+    <div className="px-4 md:px-6 pt-4 pb-8 animate-fade-in">
       <h1 className="text-3xl font-extrabold text-[var(--text-primary)] mb-6">{t('stats.title')}</h1>
 
       {/* Summary cards */}

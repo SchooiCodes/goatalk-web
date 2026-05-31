@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../store/AuthContext'
 import { useNotes } from '../store/NoteContext'
 import Icon from '../components/Icon'
+import { getHideSensitive } from '../lib/lock'
 
 const NOTE_COLORS = ['#FFD6DE', '#FF9AA2', '#FF6B6B', '#C3AED6', '#B39DDB', '#9B59B6', '#B5EAD7', '#81ECEC', '#00CEC9', '#FFF5CC', '#FDCB6E', '#F39C12', '#B5D8EB', '#74B9FF', '#0984E3', '#FFDAB9', '#FAB1A0', '#E17055', '#FFB5A0', '#FDA7DF', '#E84393', '#DDA0EE', '#A29BFE', '#6C5CE7', '#B2D8D8', '#00B894', '#00A381', '#FFE4E8', '#F8C8DC', '#D63031', '#C9E68E', '#BADB58', '#7CB342', '#F8BBD0', '#F0A0C0', '#4834D4']
 
@@ -25,6 +26,8 @@ function hashId(id: string): number {
   return Math.abs(hash)
 }
 
+const PREVIEW_LIMIT = 80
+
 export default function BoardPage() {
   const { t } = useTranslation()
   const { isOnline } = useAuth()
@@ -33,14 +36,23 @@ export default function BoardPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [text, setText] = useState('')
   const [color, setColor] = useState(NOTE_COLORS[0])
+  const [revealedId, setRevealedId] = useState<string | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const hideSensitive = getHideSensitive()
 
   useEffect(() => { document.title = `${t('board.title')} — GoaTalk`; loadNotes() }, [t, loadNotes])
+
+  const autoResize = (el: HTMLTextAreaElement) => {
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.5) + 'px'
+  }
 
   const handleOpenAdd = () => {
     setEditId(null)
     setText('')
     setColor(NOTE_COLORS[Math.floor(Math.random() * NOTE_COLORS.length)])
     setShowModal(true)
+    setTimeout(() => textareaRef.current?.focus(), 100)
   }
 
   const handleOpenEdit = (note: typeof notes[number]) => {
@@ -48,6 +60,12 @@ export default function BoardPage() {
     setText(note.text)
     setColor(note.color)
     setShowModal(true)
+    setTimeout(() => {
+      if (textareaRef.current) {
+        autoResize(textareaRef.current)
+        textareaRef.current.focus()
+      }
+    }, 100)
   }
 
   const handleSave = async () => {
@@ -69,8 +87,19 @@ export default function BoardPage() {
     }
   }
 
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setText(e.target.value)
+    autoResize(e.target)
+  }
+
   return (
-    <div className="px-4 pt-4 max-w-lg mx-auto pb-24 animate-fade-in">
+    <div className="px-4 md:px-6 pt-4 pb-24 animate-fade-in relative min-h-dvh">
+      {/* Floating decorations */}
+      <div className="fixed top-40 right-2 text-3xl opacity-10 animate-float pointer-events-none" style={{ animationDelay: '0.3s' }}><Icon emoji="📌" size={28} /></div>
+      <div className="fixed top-72 left-1 text-2xl opacity-10 animate-float pointer-events-none" style={{ animationDelay: '1s' }}><Icon emoji="✨" size={24} /></div>
+      <div className="fixed bottom-60 right-3 text-3xl opacity-10 animate-float pointer-events-none" style={{ animationDelay: '0.7s' }}><Icon emoji="🎨" size={28} /></div>
+
+      <div className="relative z-10">
       <div className="flex justify-between items-center mb-5">
         <h1 className="text-3xl font-extrabold text-[var(--text-primary)]">{t('board.title')}</h1>
         {!isOnline && (
@@ -93,7 +122,7 @@ export default function BoardPage() {
             return (
             <button
               key={note.id}
-              onClick={() => handleOpenEdit(note)}
+              onClick={() => { if (hideSensitive && revealedId !== note.id) { setRevealedId(note.id); return }; handleOpenEdit(note) }}
               className="rounded-2xl p-3 text-left min-h-[100px] shadow-md active:scale-[0.97] transition-all hover:shadow-lg flex flex-col"
               style={{
                 backgroundColor: note.color,
@@ -101,9 +130,18 @@ export default function BoardPage() {
                 color: getTextColor(note.color),
               }}
             >
-              <p className="text-sm font-semibold leading-relaxed whitespace-pre-wrap break-words flex-1">
-                {note.text}
-              </p>
+              <div className="relative flex-1">
+                <p className={`text-sm font-semibold leading-relaxed whitespace-pre-wrap break-words transition-all ${
+                  hideSensitive && revealedId !== note.id ? 'blur-sm select-none' : ''
+                }`}>
+                  {note.text.length > PREVIEW_LIMIT ? note.text.slice(0, PREVIEW_LIMIT) + '…' : note.text}
+                </p>
+                {hideSensitive && revealedId !== note.id && (
+                  <span className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[var(--card-glass)]"><Icon emoji="🔍" size={10} /> Reveal</span>
+                  </span>
+                )}
+              </div>
               <p className="text-[10px] font-medium mt-2 opacity-70">
                 {new Date(note.createdAt).toLocaleDateString()}
               </p>
@@ -136,12 +174,12 @@ export default function BoardPage() {
             </h2>
 
             <textarea
+              ref={textareaRef}
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={handleTextChange}
               placeholder={t('board.placeholder')}
-              className="w-full glass rounded-2xl p-4 text-sm font-semibold text-[var(--text-primary)] resize-none outline-none border-2 border-transparent focus:border-[var(--pink)] transition-all mb-4"
+              className="w-full glass rounded-2xl p-4 text-sm font-semibold text-[var(--text-primary)] resize-none outline-none border-2 border-transparent focus:border-[var(--pink)] transition-all mb-4 min-h-[100px]"
               rows={4}
-              autoFocus
             />
 
             <div className="flex flex-wrap gap-1.5 mb-3">
@@ -191,6 +229,7 @@ export default function BoardPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

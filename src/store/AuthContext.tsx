@@ -110,6 +110,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true }
   }, [])
 
+  // Auto-register device on every visit and sync device list
+  useEffect(() => {
+    if (!user?.pairingCodeHash || !isOnline) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const did = await getDeviceId()
+        const dname = await getDeviceName()
+        await registerDevice(user.pairingCodeHash, did, dname || 'My Device')
+        if (cancelled) return
+        const d = await pullDeviceInfos(user.pairingCodeHash)
+        if (!cancelled) {
+          setDevicesState(d)
+          await saveDevices(d)
+        }
+      } catch {}
+    })()
+    return () => { cancelled = true }
+  }, [user?.pairingCodeHash, isOnline])
+
   const setupPairing = useCallback(async (code: string, displayName: string, partnerName: string) => {
     const pairingCodeHash = await hashString(code)
     const key = await deriveSharedKey(code)
@@ -133,12 +153,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isOnline) {
       try { await pushProfile(pairingCodeHash, key, displayName, emoji) } catch {}
     }
-    // Auto-register device
+    // Auto-register device, then sync list
     try {
       const did = await getDeviceId()
       const dname = await getDeviceName()
       await registerDevice(pairingCodeHash, did, dname || 'My Device')
     } catch {}
+    // Re-sync device list so current device shows up immediately
+    if (isOnline) {
+      try {
+        const d = await pullDeviceInfos(pairingCodeHash)
+        setDevicesState(d)
+        await saveDevices(d)
+      } catch {}
+    }
   }, [isOnline])
 
   const setProfileEmoji = useCallback(async (emoji: string) => {
@@ -174,10 +202,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user?.pairingCodeHash || !isOnline) return
     try {
       const d = await pullDeviceInfos(user.pairingCodeHash)
-      setDevicesState(d)
-      await saveDevices(d)
+      // Self-heal: re-register if current device is missing
+      const did = await getDeviceId()
+      if (!d.find(dev => dev.id === did)) {
+        const dname = await getDeviceName()
+        await registerDevice(user.pairingCodeHash, did, dname || 'My Device')
+        const refreshed = await pullDeviceInfos(user.pairingCodeHash)
+        setDevicesState(refreshed)
+        await saveDevices(refreshed)
+      } else {
+        setDevicesState(d)
+        await saveDevices(d)
+      }
     } catch {}
-  }, [user?.pairingCodeHash, isOnline])
+  }, [user?.pairingCodeHash, isOnline, deviceId])
 
   const renameDevice = useCallback(async (id: string, name: string) => {
     if (!user?.pairingCodeHash) return
@@ -212,17 +250,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user?.pairingCodeHash, isOnline])
 
-  // Heartbeat every 5 minutes
+  // Heartbeat every 5 minutes + periodic device list refresh
   useEffect(() => {
     if (!user?.pairingCodeHash || !isOnline) return
     doHeartbeat()
-    const interval = setInterval(doHeartbeat, 5 * 60 * 1000)
-    return () => clearInterval(interval)
-  }, [user?.pairingCodeHash, isOnline, doHeartbeat])
+    const heartbeatInterval = setInterval(doHeartbeat, 5 * 60 * 1000)
+    const syncInterval = setInterval(syncDevices, 5 * 60 * 1000)
+    return () => { clearInterval(heartbeatInterval); clearInterval(syncInterval) }
+  }, [user?.pairingCodeHash, isOnline, doHeartbeat, syncDevices])
 
-  // Sync devices when online + paired
+  // Sync devices on mount
   useEffect(() => {
     if (user?.pairingCodeHash && isOnline) syncDevices()
+  }, [user?.pairingCodeHash, isOnline, syncDevices])
+
+  // Re-sync devices when tab becomes visible (another device may have registered)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && user?.pairingCodeHash && isOnline) {
+        syncDevices()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [user?.pairingCodeHash, isOnline, syncDevices])
 
   const syncPartnerProfile = useCallback(async () => {
