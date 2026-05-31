@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../store/AuthContext'
 import Avatar from './Avatar'
@@ -10,10 +10,10 @@ interface Props {
   rant: Rant
   isSentByMe: boolean
   partnerName: string
-  onClick: () => void
+  onClick: (rant: Rant) => void
 }
 
-export default function RantCard({ rant, isSentByMe, partnerName, onClick }: Props) {
+function RantCardInner({ rant, isSentByMe, partnerName, onClick }: Props) {
   const { t } = useTranslation()
   const { profileEmoji, partnerProfileEmoji } = useAuth()
   const [revealed, setRevealed] = useState(false)
@@ -24,7 +24,7 @@ export default function RantCard({ rant, isSentByMe, partnerName, onClick }: Pro
 
   return (
     <button
-      onClick={onClick}
+      onClick={() => onClick(rant)}
       className={`w-full glass rounded-2xl p-4 mb-2 text-left active:scale-[0.98] transition-all hover:shadow-lg animate-fade-in-up ${
         isListened ? 'opacity-85' : 'border-l-4 border-l-[var(--unread)]'
       }`}
@@ -110,3 +110,5 @@ function formatDistance(dateStr: string, t: (key: string, opts?: Record<string, 
   const diffDays = Math.floor(diffHours / 24)
   return t('rant.dayAgo', { n: diffDays })
 }
+
+export default memo(RantCardInner)

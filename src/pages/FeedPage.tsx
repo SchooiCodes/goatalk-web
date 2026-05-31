@@ -40,11 +40,20 @@ export default function FeedPage() {
   }, [navigate])
 
   return (
-    <div className="px-4 pt-4 max-w-lg mx-auto">
+    <div className="px-4 md:px-6 pt-4 relative min-h-dvh">
+      {/* Floating decorations */}
+      <div className="fixed top-36 right-3 text-3xl opacity-10 animate-float pointer-events-none" style={{ animationDelay: '0s' }}><Icon emoji="🌸" size={28} /></div>
+      <div className="fixed top-60 left-2 text-2xl opacity-10 animate-float pointer-events-none" style={{ animationDelay: '1.2s' }}><Icon emoji="💕" size={24} /></div>
+      <div className="fixed bottom-56 right-4 text-3xl opacity-10 animate-float pointer-events-none" style={{ animationDelay: '0.6s' }}><Icon emoji="✨" size={28} /></div>
+
+      <div className="relative z-10">
       {/* Header */}
       <div className="flex justify-between items-center mb-5 animate-fade-in">
         <div>
-          <h1 className="text-3xl font-extrabold text-[var(--text-primary)]">{t('feed.title')}</h1>
+          <h1 className="text-3xl font-extrabold text-[var(--text-primary)]">
+            {t('feed.title')}
+            <span className="ml-2 inline-block animate-float" style={{ animationDelay: '0.5s' }}><Icon emoji="🌸" size={24} /></span>
+          </h1>
           <p className="flex items-center gap-1 text-xs text-[var(--text-muted)] font-medium mt-0.5">
             <Avatar emoji={profileEmoji} size={16} /> {user?.displayName}
             <Icon emoji="💕" size={14} />
@@ -113,7 +122,7 @@ export default function FeedPage() {
               rant={rant}
               isSentByMe={rant.direction === 'sent'}
               partnerName={partnerName || 'Partner'}
-              onClick={() => handleRantPress(rant)}
+              onClick={handleRantPress}
             />
           ))}
         </div>
@@ -127,6 +136,7 @@ export default function FeedPage() {
           </div>
         </div>
       )}
+      </div>
       </div>
     </div>
   )

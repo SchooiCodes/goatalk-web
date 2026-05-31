@@ -20,6 +20,7 @@ export default function RantDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { selectedRant, selectRant, editTranscript, markListened, addReaction, removeReaction, deleteRant } = useRants()
+  const { profileEmoji, partnerProfileEmoji } = useAuth()
   const hasMarkedListened = useRef(false)
 
   useEffect(() => {
@@ -39,7 +40,6 @@ export default function RantDetailPage() {
   }
 
   const rant = selectedRant
-  const { profileEmoji, partnerProfileEmoji } = useAuth()
   const isSentByMe = rant.direction === 'sent'
   const isListened = !!rant.listenedAt
   const senderName = rant.senderName ?? (isSentByMe ? 'You' : 'Partner')
@@ -55,18 +55,10 @@ export default function RantDetailPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-[var(--bg)] bg-gradient-to-b from-[var(--bg)] via-[var(--cream)] to-[var(--bg)] px-4 pt-6 pb-8 animate-fade-in">
-      <div className="flex justify-between items-center mb-4">
-        <button
-          onClick={() => navigate('/feed')}
-          className="text-sm font-bold text-[var(--text-muted)] hover:text-[var(--pink)] transition-colors inline-flex items-center gap-1"
-        >
-          ← {t('common.back')}
-        </button>
-      </div>
-
+    <div className="min-h-dvh bg-[var(--bg)] bg-gradient-to-b from-[var(--bg)] via-[var(--cream)] to-[var(--bg)] px-4 md:px-6 pt-6 pb-8 animate-fade-in">
       {/* Header */}
-      <div className="glass rounded-3xl p-5 mb-4">
+      <div className="max-w-3xl mx-auto">
+        <div className="glass rounded-3xl p-5 mb-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
               <Avatar
@@ -167,6 +159,7 @@ export default function RantDetailPage() {
       >
         <Icon emoji="🗑️" size={16} /> {t('rant.delete', 'Delete')}
       </button>
+      </div>
     </div>
   )
 }
