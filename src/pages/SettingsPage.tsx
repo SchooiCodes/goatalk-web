@@ -6,12 +6,12 @@ import i18n from '../i18n'
 import KawaiiButton from '../components/KawaiiButton'
 import { showToast } from '../components/Toast'
 import Icon from '../components/Icon'
-import { getPendingCount } from '../lib/sync'
-import { getLastSyncedAt, resetAllData } from '../lib/database'
+import { resetAllData } from '../lib/database'
 import { PROFILE_EMOJIS } from '../types'
 import { getPrivacyMode, setPrivacyMode } from '../components/PrivacyOverlay'
 import { hasPin, setPinHash, clearPinHash, getPinTimeoutMinutes, setPinTimeoutMinutes, getHideSensitive, setHideSensitive, setLocked } from '../lib/lock'
 import { hashString } from '../lib/crypto'
+import { setTranscriptionMode, getTranscriptionMode } from '../lib/database'
 
 const LANGUAGES = [
   { code: 'en', label: 'English', emoji: '🇬🇧' },
@@ -19,10 +19,15 @@ const LANGUAGES = [
 ]
 
 const SPEEDS = [0.5, 1, 1.2, 1.5, 2]
-const STORAGE_KEY = 'goatalk_playback_speed'
+const SPEED_KEY = 'goatalk_playback_speed'
+
+function getSavedSpeed(): number {
+  try { const v = parseFloat(localStorage.getItem(SPEED_KEY) || '1'); return SPEEDS.includes(v) ? v : 1 } catch { return 1 }
+}
 
 export default function SettingsPage() {
   const { t } = useTranslation()
+  const [currentSpeed, setCurrentSpeed] = useState(getSavedSpeed)
 
   useEffect(() => {
     document.title = `${t('settings.title')} — GoaTalk`
@@ -30,8 +35,6 @@ export default function SettingsPage() {
 
   const { user, partnerName, reset, isOnline, profileEmoji, partnerProfileEmoji, setProfileEmoji, exportSession, updateDisplayName, updatePartnerName, devices, deviceId, removeDevice } = useAuth()
   const { scheme, theme, toggle, setTheme } = useTheme()
-  const [pendingCount, setPendingCount] = useState(0)
-  const [lastSynced, setLastSynced] = useState<string | null>(null)
   const [showPicker, setShowPicker] = useState(false)
   const [exportCode, setExportCode] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
@@ -51,10 +54,15 @@ export default function SettingsPage() {
   const [pinConfirm, setPinConfirm] = useState('')
   const [pinStep, setPinStep] = useState<'enter' | 'confirm'>('enter')
   const [pinError, setPinError] = useState<string | null>(null)
+  const [transcribeMode, setTranscribeMode] = useState<'webspeech' | 'whisper' | 'hf' | 'deepgram' | 'groq'>('webspeech')
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem('openai_api_key') || '')
+  const [groqKey, setGroqKey] = useState(() => localStorage.getItem('groq_api_key') || '')
+  const [usageStatus, setUsageStatus] = useState<Record<string, { status: string; detail?: string }> | null>(null)
 
   useEffect(() => {
-    getPendingCount().then(setPendingCount)
-    getLastSyncedAt().then(setLastSynced)
+    getTranscriptionMode().then(setTranscribeMode)
+    // Fetch provider usage status
+    fetch('/api/usage').then(r => r.json()).then(setUsageStatus).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -124,7 +132,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="px-4 pt-4 max-w-lg mx-auto pb-8 animate-fade-in">
+    <div className="px-4 md:px-6 pt-4 pb-8 animate-fade-in">
       <h1 className="text-3xl font-extrabold text-[var(--text-primary)] mb-6">{t('settings.title')}</h1>
 
       {/* Profile Card */}
@@ -215,33 +223,6 @@ export default function SettingsPage() {
 
       {/* Sections */}
       <div className="space-y-4 stagger">
-        {/* Sync */}
-        <div className="glass rounded-2xl p-4">
-          <h2 className="font-bold text-base text-[var(--text-primary)] mb-3 flex items-center gap-2">
-            <Icon emoji="📡" /> {t('settings.sync')}
-          </h2>
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-[var(--text-secondary)]">{t('settings.status')}</span>
-              <span className={`font-bold ${isOnline ? 'text-[var(--success)]' : 'text-[var(--coral)]'}`}>
-                {isOnline ? <><Icon emoji="🟢" size={14} /> {t('settings.online')}</> : <><Icon emoji="🔴" size={14} /> {t('settings.offline')}</>}
-              </span>
-            </div>
-            {lastSynced && (
-              <div className="flex justify-between text-sm">
-                <span className="text-[var(--text-secondary)]">{t('settings.lastSynced')}</span>
-                <span className="font-semibold text-[var(--text-primary)]">{new Date(lastSynced).toLocaleString()}</span>
-              </div>
-            )}
-            {pendingCount > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-[var(--text-secondary)]">{t('settings.pending')}</span>
-                <span className="font-bold text-[var(--coral)]">{pendingCount}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Language */}
         <div className="glass rounded-2xl p-4">
           <h2 className="font-bold text-base text-[var(--text-primary)] mb-3 flex items-center gap-2">
@@ -303,22 +284,19 @@ export default function SettingsPage() {
             <Icon emoji="⏩" /> {t('settings.playbackSpeed')}
           </h2>
           <div className="flex gap-2">
-            {SPEEDS.map((s) => {
-              const saved = parseFloat(localStorage.getItem(STORAGE_KEY) || '1')
-              return (
-                <button
-                  key={s}
-                  onClick={() => { localStorage.setItem(STORAGE_KEY, String(s)) }}
-                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-90 ${
-                    saved === s
-                      ? 'bg-gradient-to-r from-[var(--pink)] to-[var(--pink-dark)] text-white shadow-md'
-                      : 'bg-[var(--cream)] text-[var(--text-primary)] hover:brightness-95'
-                  }`}
-                >
-                  {s}x
-                </button>
-              )
-            })}
+            {SPEEDS.map((s) => (
+              <button
+                key={s}
+                onClick={() => { localStorage.setItem(SPEED_KEY, String(s)); setCurrentSpeed(s) }}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-90 ${
+                  currentSpeed === s
+                    ? 'bg-gradient-to-r from-[var(--pink)] to-[var(--pink-dark)] text-white shadow-md'
+                    : 'bg-[var(--cream)] text-[var(--text-primary)] hover:brightness-95'
+                }`}
+              >
+                {s}x
+              </button>
+            ))}
           </div>
         </div>
 
@@ -536,6 +514,134 @@ export default function SettingsPage() {
           </p>
         </div>
 
+        {/* AI Transcription */}
+        <div className="glass rounded-2xl p-4">
+          <h2 className="font-bold text-base text-[var(--text-primary)] mb-3 flex items-center gap-2">
+            <Icon emoji="🤖" /> AI Transcription
+          </h2>
+          <p className="text-xs text-[var(--text-muted)] mb-3">
+            Browser uses Web Speech API (free, Chrome/Edge/Android only). HuggingFace & Deepgram are free via server. OpenAI & Groq require your own API key.
+          </p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <button
+              onClick={async () => { setTranscribeMode('webspeech'); await setTranscriptionMode('webspeech') }}
+              className={`flex items-center justify-center gap-1 flex-1 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-90 ${
+                transcribeMode === 'webspeech'
+                  ? 'bg-gradient-to-r from-[var(--pink)] to-[var(--pink-dark)] text-white shadow-md'
+                  : 'bg-[var(--cream)] text-[var(--text-primary)] hover:brightness-95'
+              }`}
+            >
+              <Icon emoji="🎤" size={14} /> Browser
+            </button>
+            <button
+              onClick={async () => { setTranscribeMode('hf'); await setTranscriptionMode('hf') }}
+              className={`flex items-center justify-center gap-1 flex-1 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-90 ${
+                transcribeMode === 'hf'
+                  ? 'bg-gradient-to-r from-[var(--pink)] to-[var(--pink-dark)] text-white shadow-md'
+                  : 'bg-[var(--cream)] text-[var(--text-primary)] hover:brightness-95'
+              }`}
+            >
+              <Icon emoji="🤗" size={14} /> HuggingFace
+            </button>
+            <button
+              onClick={async () => { setTranscribeMode('deepgram'); await setTranscriptionMode('deepgram') }}
+              className={`flex items-center justify-center gap-1 flex-1 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-90 ${
+                transcribeMode === 'deepgram'
+                  ? 'bg-gradient-to-r from-[var(--pink)] to-[var(--pink-dark)] text-white shadow-md'
+                  : 'bg-[var(--cream)] text-[var(--text-primary)] hover:brightness-95'
+              }`}
+            >
+              <Icon emoji="🎙️" size={14} /> Deepgram
+            </button>
+            <button
+              onClick={async () => { setTranscribeMode('whisper'); await setTranscriptionMode('whisper') }}
+              className={`flex items-center justify-center gap-1 flex-1 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-90 ${
+                transcribeMode === 'whisper'
+                  ? 'bg-gradient-to-r from-[var(--pink)] to-[var(--pink-dark)] text-white shadow-md'
+                  : 'bg-[var(--cream)] text-[var(--text-primary)] hover:brightness-95'
+              }`}
+            >
+              <Icon emoji="🤖" size={14} /> OpenAI
+            </button>
+            <button
+              onClick={async () => { setTranscribeMode('groq'); await setTranscriptionMode('groq') }}
+              className={`flex items-center justify-center gap-1 flex-1 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-90 ${
+                transcribeMode === 'groq'
+                  ? 'bg-gradient-to-r from-[var(--pink)] to-[var(--pink-dark)] text-white shadow-md'
+                  : 'bg-[var(--cream)] text-[var(--text-primary)] hover:brightness-95'
+              }`}
+            >
+              <Icon emoji="⚡" size={14} /> Groq
+            </button>
+          </div>
+          {transcribeMode === 'whisper' && (
+            <div className="space-y-2">
+              <label className="block text-[10px] font-semibold text-[var(--text-muted)]">OpenAI API Key</label>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => { setApiKey(e.target.value); localStorage.setItem('openai_api_key', e.target.value) }}
+                  placeholder="sk-..."
+                  className="flex-1 px-3 py-2 text-xs rounded-xl bg-[var(--cream)] text-[var(--text-primary)] border border-[var(--text-muted)]/20 outline-none focus:ring-2 focus:ring-[var(--pink)]/50 transition-all"
+                />
+                <button
+                  onClick={() => { setApiKey(''); localStorage.removeItem('openai_api_key') }}
+                  className="px-3 py-2 text-xs font-bold text-[var(--error)] bg-[var(--error-light)] rounded-xl active:scale-90"
+                >
+                  Clear
+                </button>
+              </div>
+              <p className="text-[10px] text-[var(--text-muted)] leading-relaxed">Key stored only in your browser's localStorage. Get one at <span className="font-mono">platform.openai.com/api-keys</span></p>
+            </div>
+          )}
+          {transcribeMode === 'groq' && (
+            <div className="space-y-2">
+              <label className="block text-[10px] font-semibold text-[var(--text-muted)]">Groq API Key</label>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={groqKey}
+                  onChange={(e) => { setGroqKey(e.target.value); localStorage.setItem('groq_api_key', e.target.value) }}
+                  placeholder="gsk_..."
+                  className="flex-1 px-3 py-2 text-xs rounded-xl bg-[var(--cream)] text-[var(--text-primary)] border border-[var(--text-muted)]/20 outline-none focus:ring-2 focus:ring-[var(--pink)]/50 transition-all"
+                />
+                <button
+                  onClick={() => { setGroqKey(''); localStorage.removeItem('groq_api_key') }}
+                  className="px-3 py-2 text-xs font-bold text-[var(--error)] bg-[var(--error-light)] rounded-xl active:scale-90"
+                >
+                  Clear
+                </button>
+              </div>
+              <p className="text-[10px] text-[var(--text-muted)] leading-relaxed">Get a free API key at <span className="font-mono">console.groq.com/keys</span></p>
+            </div>
+          )}
+          {transcribeMode === 'hf' && (
+            <div className="rounded-2xl bg-[var(--mint-light)] px-4 py-3">
+              <p className="text-xs font-semibold text-[var(--mint)] flex items-center gap-1">
+                <Icon emoji="✅" size={14} /> HuggingFace ready
+                {usageStatus?.huggingFace && (
+                  <span className={`ml-1 text-[10px] ${usageStatus.huggingFace.status === 'ok' ? 'text-[var(--mint)]' : 'text-[var(--coral)]'}`}>
+                    — {usageStatus.huggingFace.status === 'ok' ? 'Credits available' : usageStatus.huggingFace.detail}
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
+          {transcribeMode === 'deepgram' && (
+            <div className="rounded-2xl bg-[var(--mint-light)] px-4 py-3">
+              <p className="text-xs font-semibold text-[var(--mint)] flex items-center gap-1">
+                <Icon emoji="✅" size={14} /> Deepgram ready
+                {usageStatus?.deepgram && (
+                  <span className={`ml-1 text-[10px] ${usageStatus.deepgram.status === 'ok' ? 'text-[var(--mint)]' : 'text-[var(--coral)]'}`}>
+                    — {usageStatus.deepgram.status === 'ok' ? 'Credits available' : usageStatus.deepgram.detail}
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
+        </div>
+
         {/* Devices */}
         <div className="glass rounded-2xl p-4">
           <h2 className="font-bold text-base text-[var(--text-primary)] mb-3 flex items-center gap-2">
@@ -605,12 +711,10 @@ export default function SettingsPage() {
         </div>
 
         {/* Reset */}
-        <div className="pt-2">
           <KawaiiButton onClick={handleReset} variant="ghost" className="w-full">
             <Icon emoji="🔄" /> {t('settings.reset')}
           </KawaiiButton>
         </div>
       </div>
-    </div>
   )
 }
