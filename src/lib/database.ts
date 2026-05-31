@@ -1,5 +1,5 @@
 import { openDB, type IDBPDatabase } from 'idb'
-import type { LocalIdentity, Rant, Note } from '../types'
+import type { LocalIdentity, Rant, Note, LongEntry } from '../types'
 
 export interface GoatalkDB {
   identity: { key: string; value: unknown }
@@ -7,13 +7,14 @@ export interface GoatalkDB {
   pendingSync: { key: string; value: { id: string; createdAt: string; retries: number }; indexes: { 'by-created': string } }
   audio: { key: string; value: ArrayBuffer }
   notes: { key: string; value: Note }
+  longs: { key: string; value: LongEntry }
 }
 
 let dbPromise: Promise<IDBPDatabase<GoatalkDB>> | null = null
 
 export async function getDb(): Promise<IDBPDatabase<GoatalkDB>> {
   if (dbPromise) return dbPromise
-  dbPromise = openDB<GoatalkDB>('goatalk', 4, {
+  dbPromise = openDB<GoatalkDB>('goatalk', 5, {
     upgrade(db, oldVersion) {
       if (oldVersion < 1) {
         db.createObjectStore('identity')
@@ -34,6 +35,11 @@ export async function getDb(): Promise<IDBPDatabase<GoatalkDB>> {
       if (oldVersion < 4) {
         if (!db.objectStoreNames.contains('notes')) {
           db.createObjectStore('notes', { keyPath: 'id' })
+        }
+      }
+      if (oldVersion < 5) {
+        if (!db.objectStoreNames.contains('longs')) {
+          db.createObjectStore('longs', { keyPath: 'id' })
         }
       }
     },
@@ -141,6 +147,26 @@ export async function deleteNoteFromDb(id: string): Promise<void> {
   await db.delete('notes', id)
 }
 
+export async function insertLong(entry: LongEntry): Promise<void> {
+  const db = await getDb()
+  await db.put('longs', entry)
+}
+
+export async function getLongs(): Promise<LongEntry[]> {
+  const db = await getDb()
+  return db.getAll('longs')
+}
+
+export async function getLongById(id: string): Promise<LongEntry | undefined> {
+  const db = await getDb()
+  return db.get('longs', id)
+}
+
+export async function deleteLongFromDb(id: string): Promise<void> {
+  const db = await getDb()
+  await db.delete('longs', id)
+}
+
 export async function markListened(rantId: string, progress: number): Promise<void> {
   await updateRant(rantId, { listenedAt: new Date().toISOString(), listenProgress: progress })
 }
@@ -245,6 +271,17 @@ export async function getDeviceName(): Promise<string | null> {
   return (await db.get('identity', 'deviceName')) as string | null
 }
 
+export async function setTranscriptionMode(mode: 'webspeech' | 'whisper' | 'hf' | 'deepgram' | 'groq'): Promise<void> {
+  const db = await getDb()
+  await db.put('identity', mode, 'transcriptionMode')
+}
+
+export async function getTranscriptionMode(): Promise<'webspeech' | 'whisper' | 'hf' | 'deepgram' | 'groq'> {
+  const db = await getDb()
+  const mode = await db.get('identity', 'transcriptionMode')
+  return (mode as 'webspeech' | 'whisper' | 'hf' | 'deepgram' | 'groq') || 'hf'
+}
+
 export async function saveDevices(devices: DeviceInfo[]): Promise<void> {
   const db = await getDb()
   await db.put('identity', devices, 'devices')
@@ -302,4 +339,22 @@ export async function resizeImage(file: File, maxSize = 200): Promise<string> {
 export async function resetAllData(): Promise<void> {
   dbPromise = null
   indexedDB.deleteDatabase('goatalk')
+}
+
+export async function importSessionBundle(data: { identity: LocalIdentity; sharedKey: CryptoKey; profileEmoji: string; partnerProfileEmoji: string }): Promise<void> {
+  dbPromise = null
+  // Wait for the delete to finish before reopening
+  await new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase('goatalk')
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(req.error)
+  })
+  // Open fresh — schema migration runs once
+  const db = await getDb()
+  const tx = db.transaction('identity', 'readwrite')
+  tx.store.put(data.identity, 'user')
+  tx.store.put(new Uint8Array(await crypto.subtle.exportKey('raw', data.sharedKey)), 'sharedKeyRaw')
+  tx.store.put(data.profileEmoji, 'profileEmoji')
+  tx.store.put(data.partnerProfileEmoji, 'partnerProfileEmoji')
+  await tx.done
 }

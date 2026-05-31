@@ -1,5 +1,5 @@
 import { encryptRantPackage, decryptRantPackage, deriveTransferKey, hashString, exportKeyBase64, importKeyFromBase64 } from './crypto'
-import { saveLocalIdentity, saveSharedKey, saveProfileEmoji, savePartnerProfileEmoji, resetAllData } from './database'
+import { importSessionBundle } from './database'
 import type { LocalIdentity } from '../types'
 
 const API_BASE = '/api'
@@ -51,11 +51,11 @@ export async function importSession(transferCode: string): Promise<void> {
   const json = await decryptRantPackage(encrypted, key)
   const bundle: SessionBundle = JSON.parse(json)
 
-  await resetAllData()
-  await saveLocalIdentity(bundle.identity)
-  // Re-import raw shared key and store it
   const sharedKey = await importKeyFromBase64(bundle.sharedKeyBase64)
-  await saveSharedKey(sharedKey)
-  await saveProfileEmoji(bundle.profileEmoji)
-  await savePartnerProfileEmoji(bundle.partnerProfileEmoji)
+  await importSessionBundle({
+    identity: bundle.identity,
+    sharedKey,
+    profileEmoji: bundle.profileEmoji,
+    partnerProfileEmoji: bundle.partnerProfileEmoji,
+  })
 }

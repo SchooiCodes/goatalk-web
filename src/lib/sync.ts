@@ -2,7 +2,7 @@ import { getRantById, removePending, getPending, incrementPendingRetry, getPendi
 import type { DeviceInfo } from './database'
 import { saveAudioFromBase64, loadAudio } from './audio'
 import { encryptRantPackage, decryptRantPackage } from './crypto'
-import type { Rant, RantPackage, NotePackage } from '../types'
+import type { Rant, RantPackage, NotePackage, LongPackage } from '../types'
 
 const API_BASE = '/api'
 const CONCURRENCY = 5
@@ -300,4 +300,50 @@ export async function pullProfile(pairingCodeHash: string, sharedKey: CryptoKey,
   } catch {
     return null
   }
+}
+
+export async function pushLong(entry: { id: string; title: string; body: string; createdAt: string }, pairingCodeHash: string, sharedKey: CryptoKey): Promise<void> {
+  const pkg: LongPackage = { title: entry.title, body: entry.body, createdAt: entry.createdAt }
+  const encrypted = await encryptRantPackage(JSON.stringify(pkg), sharedKey)
+  const res = await fetch(`${API_BASE}/longs?id=${entry.id}`, {
+    method: 'POST',
+    body: encrypted,
+    headers: { 'X-Pairing-Hash': pairingCodeHash },
+  })
+  if (!res.ok) throw new Error(`Long upload failed: ${res.status}`)
+}
+
+export async function pullLongs(pairingCodeHash: string, sharedKey: CryptoKey, existingIds: Set<string>): Promise<Array<{ id: string } & LongPackage>> {
+  let list: Array<{ id: string }> = []
+  try {
+    const res = await fetch(`${API_BASE}/longs`, {
+      headers: { 'X-Pairing-Hash': pairingCodeHash },
+    })
+    if (!res.ok) return []
+    list = await res.json()
+  } catch {
+    return []
+  }
+  const toFetch = list.filter((item) => !existingIds.has(item.id))
+  const results: Array<{ id: string } & LongPackage> = []
+  for (let i = 0; i < toFetch.length; i += CONCURRENCY) {
+    const batch = toFetch.slice(i, i + CONCURRENCY)
+    const settled = await Promise.allSettled(batch.map(async (item) => {
+      try {
+        const blobRes = await fetch(`${API_BASE}/longs/${item.id}`, {
+          headers: { 'X-Pairing-Hash': pairingCodeHash },
+        })
+        if (!blobRes.ok) return null
+        const encrypted = await blobRes.arrayBuffer()
+        const json = await decryptRantPackage(encrypted, sharedKey)
+        return { id: item.id, ...JSON.parse(json) }
+      } catch {
+        return null
+      }
+    }))
+    for (const r of settled) {
+      if (r.status === 'fulfilled' && r.value) results.push(r.value)
+    }
+  }
+  return results
 }

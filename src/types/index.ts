@@ -45,6 +45,20 @@ export interface NotePackage {
   createdAt: string
 }
 
+export interface LongEntry {
+  id: string
+  title: string
+  body: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface LongPackage {
+  title: string
+  body: string
+  createdAt: string
+}
+
 export interface RantPackage {
   version: number
   transcript: string
